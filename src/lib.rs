@@ -214,15 +214,11 @@ impl WordSet {
         self.bits11_set.sort();
     }
 
-    pub fn sort_by<L, F>(&mut self, mut compare: F, wordlist: &mut L)
+    pub fn sort_by<F>(&mut self, compare: F)
     where
-        L: AsWordList,
-        F: FnMut(&WordListElement<L>, &WordListElement<L>) -> Ordering,
+        F: Fn(&Bits11, &Bits11) -> Ordering,
     {
-        let msg: &'static str = "sorted wordset should contain only wordlist elements";
-        self.bits11_set.sort_by(|a: &Bits11, b: &Bits11| {
-            compare(&a.to_wordlist_element::<L>(wordlist).expect(msg), &b.to_wordlist_element::<L>(wordlist).expect(msg))
-        });
+        self.bits11_set.sort_by(compare)
     }
 
     pub fn from_entropy(entropy: &[u8]) -> Result<Self, ErrorWordList> {
@@ -310,6 +306,14 @@ impl WordSet {
             phrase.push_str(word.as_ref());
         }
         Ok(phrase)
+    }
+
+    pub fn to_wordlist_elements<L: AsWordList>(&self, wordlist: &mut L) -> Result<Vec<WordListElement<L>>, ErrorWordList> {
+        let mut wordlist_elements = Vec::with_capacity(self.len());
+        for bits11 in self.iter() {
+            wordlist_elements.push(bits11.to_wordlist_element(wordlist)?);
+        }
+        Ok(wordlist_elements)
     }
 }
 
