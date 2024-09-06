@@ -13,13 +13,13 @@ pub struct InternalWordList;
 impl AsWordList for InternalWordList {
     type Word = &'static str;
 
-    fn get_word(&self, bits: Bits11) -> Result<Self::Word, ErrorWordList> {
+    fn get_word(&mut self, bits: Bits11) -> Result<Self::Word, ErrorWordList> {
         let word_order = bits.bits() as usize;
         Ok(WORDLIST_ENGLISH[word_order])
     }
 
     fn get_words_by_prefix(
-        &self,
+        &mut self,
         prefix: &str,
     ) -> Result<Vec<WordListElement<Self>>, ErrorWordList> {
         let mut out: Vec<WordListElement<Self>> = Vec::new();
@@ -34,7 +34,7 @@ impl AsWordList for InternalWordList {
         Ok(out)
     }
 
-    fn bits11_for_word(&self, word: &str) -> Result<Bits11, ErrorWordList> {
+    fn bits11_for_word(&mut self, word: &str) -> Result<Bits11, ErrorWordList> {
         for (i, element) in WORDLIST_ENGLISH.iter().enumerate() {
             if element == &word {
                 return Bits11::from(i as u16);

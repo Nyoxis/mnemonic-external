@@ -29,7 +29,7 @@ struct FlashMockWordList;
 impl AsWordList for FlashMockWordList {
     type Word = String;
 
-    fn get_word(&self, bits: Bits11) -> Result<Self::Word, ErrorWordList> {
+    fn get_word(&mut self, bits: Bits11) -> Result<Self::Word, ErrorWordList> {
         let word_order = bits.bits() as usize;
         let mut word_bytes = unsafe {
             FLASH_MOCK[word_order * WORD_MAX_LEN..(word_order + 1) * WORD_MAX_LEN].to_vec()
@@ -39,7 +39,7 @@ impl AsWordList for FlashMockWordList {
     }
 
     fn get_words_by_prefix(
-        &self,
+        &mut self,
         prefix: &str,
     ) -> Result<Vec<WordListElement<Self>>, ErrorWordList> {
         let mut words_by_prefix: Vec<WordListElement<Self>> = Vec::new();
@@ -55,7 +55,7 @@ impl AsWordList for FlashMockWordList {
         Ok(words_by_prefix)
     }
 
-    fn bits11_for_word(&self, word: &str) -> Result<Bits11, ErrorWordList> {
+    fn bits11_for_word(&mut self, word: &str) -> Result<Bits11, ErrorWordList> {
         for bits_u16 in 0..TOTAL_WORDS {
             let bits11 = Bits11::from(bits_u16 as u16)?;
             let read_word = self.get_word(bits11)?;
@@ -170,34 +170,34 @@ static KNOWN: &[[&str; 2]] = &[
 #[test]
 fn flash_mock_entropy_to_phrase() {
     fill_flash_mock();
-    let flash_mock_word_list = FlashMockWordList;
+    let mut flash_mock_word_list = FlashMockWordList;
     for known in KNOWN {
         let entropy = hex::decode(known[1]).unwrap();
         let word_set = WordSet::from_entropy(&entropy).unwrap();
-        assert_eq!(word_set.to_phrase(&flash_mock_word_list).unwrap(), known[0]);
+        assert_eq!(word_set.to_phrase(&mut flash_mock_word_list).unwrap(), known[0]);
     }
 }
 
 #[cfg(feature = "sufficient-memory")]
 #[test]
 fn internal_entropy_to_phrase() {
-    let internal_word_list = InternalWordList;
+    let mut internal_word_list = InternalWordList;
     for known in KNOWN {
         let entropy = hex::decode(known[1]).unwrap();
         let word_set = WordSet::from_entropy(&entropy).unwrap();
-        assert_eq!(word_set.to_phrase(&internal_word_list).unwrap(), known[0]);
+        assert_eq!(word_set.to_phrase(&mut internal_word_list).unwrap(), known[0]);
     }
 }
 
 #[test]
 fn flash_mock_phrase_to_entropy() {
     fill_flash_mock();
-    let flash_mock_word_list = FlashMockWordList;
+    let mut flash_mock_word_list = FlashMockWordList;
     for known in KNOWN {
         let entropy_set = hex::decode(known[1]).unwrap();
         let mut word_set = WordSet::new();
         for word in known[0].split(' ') {
-            word_set.add_word(word, &flash_mock_word_list).unwrap();
+            word_set.add_word(word, &mut flash_mock_word_list).unwrap();
         }
         let entropy_calc = word_set.to_entropy().unwrap();
         assert_eq!(entropy_calc, entropy_set);
@@ -207,12 +207,12 @@ fn flash_mock_phrase_to_entropy() {
 #[cfg(feature = "sufficient-memory")]
 #[test]
 fn internal_phrase_to_entropy() {
-    let internal_word_list = InternalWordList;
+    let mut internal_word_list = InternalWordList;
     for known in KNOWN {
         let entropy_set = hex::decode(known[1]).unwrap();
         let mut word_set = WordSet::new();
         for word in known[0].split(' ') {
-            word_set.add_word(word, &internal_word_list).unwrap();
+            word_set.add_word(word, &mut internal_word_list).unwrap();
         }
         let entropy_calc = word_set.to_entropy().unwrap();
         assert_eq!(entropy_calc, entropy_set);
@@ -222,7 +222,7 @@ fn internal_phrase_to_entropy() {
 #[test]
 fn flash_mock_get_word() {
     fill_flash_mock();
-    let flash_mock_word_list = FlashMockWordList;
+    let mut flash_mock_word_list = FlashMockWordList;
     assert_eq!(
         "access",
         flash_mock_word_list

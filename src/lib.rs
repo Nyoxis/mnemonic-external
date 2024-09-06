@@ -12,6 +12,7 @@ use alloc::{string::String, vec::Vec};
 #[cfg(feature = "std")]
 use std::{string::String, vec::Vec};
 
+use core::cmp::Ordering;
 use bitvec::prelude::{BitSlice, BitVec, Msb0};
 use sha2::{Digest, Sha256};
 
@@ -34,7 +35,7 @@ pub const SEPARATOR_LEN: usize = 1;
 
 pub const MAX_SEED_LEN: usize = 24;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Ord, Eq, PartialEq, PartialOrd)]
 pub struct Bits11(u16);
 
 impl Bits11 {
@@ -48,6 +49,15 @@ impl Bits11 {
             Err(ErrorWordList::InvalidWordNumber)
         }
     }
+    pub fn to_wordlist_element<L: AsWordList>(
+        &self,
+        wordlist: &mut L,
+    ) -> Result<WordListElement<L>, ErrorWordList>{
+        match L::get_word(wordlist, *self) {
+            Ok(word) => Ok(WordListElement { word, bits11: *self }),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 pub struct WordListElement<L: AsWordList + ?Sized> {
@@ -57,12 +67,12 @@ pub struct WordListElement<L: AsWordList + ?Sized> {
 
 pub trait AsWordList {
     type Word: AsRef<str>;
-    fn get_word(&self, bits: Bits11) -> Result<Self::Word, ErrorWordList>;
+    fn get_word(&mut self, bits: Bits11) -> Result<Self::Word, ErrorWordList>;
     fn get_words_by_prefix(
-        &self,
+        &mut self,
         prefix: &str,
     ) -> Result<Vec<WordListElement<Self>>, ErrorWordList>;
-    fn bits11_for_word(&self, word: &str) -> Result<Bits11, ErrorWordList>;
+    fn bits11_for_word(&mut self, word: &str) -> Result<Bits11, ErrorWordList>;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -112,7 +122,109 @@ pub struct WordSet {
     pub bits11_set: Vec<Bits11>,
 }
 
+pub struct WordSetIterator<'a> {
+    wordset: &'a WordSet,
+    index: usize,
+}
+
+impl<'a> Iterator for WordSetIterator<'a> {
+    type Item = Bits11;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.wordset.get(self.index).cloned();
+        self.index += 1;
+        result
+    }
+}
+
+impl<'a, L: AsWordList + ?Sized> FromIterator<&'a WordListElement<L>> for WordSet {
+    fn from_iter<T: IntoIterator<Item = &'a WordListElement<L>>>(iter: T) -> Self {
+        let mut c = WordSet::new();
+
+        for i in iter {
+            c.bits11_set.push(i.bits11);
+        }
+
+        c
+    }
+}
+
+impl<L: AsWordList + ?Sized> FromIterator<WordListElement<L>> for WordSet {
+    fn from_iter<T: IntoIterator<Item = WordListElement<L>>>(iter: T) -> Self {
+        let mut c = WordSet::new();
+
+        for i in iter {
+            c.bits11_set.push(i.bits11);
+        }
+
+        c
+    }
+}
+
+impl<'a> FromIterator<&'a Bits11> for WordSet {
+    fn from_iter<T: IntoIterator<Item = &'a Bits11>>(iter: T) -> Self {
+        let mut c = WordSet::new();
+
+        for i in iter {
+            c.bits11_set.push(*i);
+        }
+
+        c
+    }
+}
+
+impl FromIterator<Bits11> for WordSet {
+    fn from_iter<T: IntoIterator<Item = Bits11>>(iter: T) -> Self {
+        let mut c = WordSet::new();
+
+        for i in iter {
+            c.bits11_set.push(i);
+        }
+
+        c
+    }
+}
+
 impl WordSet {
+    pub fn get(&self, index: usize) -> Option<&Bits11> {
+        self.bits11_set.get(index)
+    }
+
+    pub fn iter(&self) -> WordSetIterator {
+        WordSetIterator { wordset: self, index: 0 }
+    }
+
+    pub fn len(&self) -> usize {
+        self.bits11_set.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bits11_set.is_empty()
+    }
+
+    pub fn push(&mut self, bits11: Bits11) {
+        self.bits11_set.push(bits11)
+    }
+
+    pub fn append(&mut self, appendix: &mut Self) {
+        self.bits11_set.append(&mut appendix.bits11_set)
+    }
+
+    pub fn sort(&mut self) {
+        self.bits11_set.sort();
+    }
+
+    pub fn sort_by<L, F>(&mut self, mut compare: F, wordlist: &mut L)
+    where
+        L: AsWordList,
+        F: FnMut(&WordListElement<L>, &WordListElement<L>) -> Ordering,
+    {
+        let msg: &'static str = "sorted wordset should contain only wordlist elements";
+        self.bits11_set.sort_by(|a: &Bits11, b: &Bits11| {
+            compare(&a.to_wordlist_element::<L>(wordlist).expect(msg), &b.to_wordlist_element::<L>(wordlist).expect(msg))
+        });
+    }
+
     pub fn from_entropy(entropy: &[u8]) -> Result<Self, ErrorWordList> {
         if entropy.len() < 16 || entropy.len() > 32 || entropy.len() % 4 != 0 {
             return Err(ErrorWordList::InvalidEntropy);
@@ -145,7 +257,7 @@ impl WordSet {
     pub fn add_word<L: AsWordList>(
         &mut self,
         word: &str,
-        wordlist: &L,
+        wordlist: &mut L,
     ) -> Result<(), ErrorWordList> {
         if self.bits11_set.len() < MAX_SEED_LEN {
             let bits11 = wordlist.bits11_for_word(word)?;
@@ -187,7 +299,7 @@ impl WordSet {
         }
     }
 
-    pub fn to_phrase<L: AsWordList>(&self, wordlist: &L) -> Result<String, ErrorWordList> {
+    pub fn to_phrase<L: AsWordList>(&self, wordlist: &mut L) -> Result<String, ErrorWordList> {
         let mut phrase =
             String::with_capacity(self.bits11_set.len() * (WORD_MAX_LEN + SEPARATOR_LEN) - 1);
         for bits11 in self.bits11_set.iter() {
